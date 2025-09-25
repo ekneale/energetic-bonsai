@@ -26,7 +26,7 @@
 #include "WCSimFLOWER.h"
 
 // low energy reconstruction
-int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.root", const char *outfiletag = "a",
+int flower_with_bonsai_pairfit(const char *detector, const char *filename = "../wcsim.root", const char *outfiletag = "a",
                        const int verbose = 1, const bool overwrite_nearest = false,
                        const double override_dark_rate = -99, const int start_event = 0, const int n_events = -1) {
     // sets the default nearest neighbour distances etc. Check DetectorEnumFromString inside
@@ -68,20 +68,65 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
     out_tree->Branch("true_time", &true_time, "true_time/D");
     out_tree->Branch("true_energy", &true_energy, "true_energy/F");
     out_tree->Branch("true_charge", &true_charge, "true_charge/D");
-    // setup reco variables
-    TVector3 reco_pos, reco_dir;
+    // setup reco variables for positron
+    TVector3 reco_dir, reco_pos;
+    double reco_pos_x,reco_pos_y,reco_pos_z;
     double reco_time;
     float reco_energy, reco_neff, reco_neff2;
-    out_tree->Branch("reco_position", &reco_pos);
+    //out_tree->Branch("reco_position", &reco_pos);
+    out_tree->Branch("reco_position_x", &reco_pos_x);
+    out_tree->Branch("reco_position_y", &reco_pos_y);
+    out_tree->Branch("reco_position_z", &reco_pos_z);
     out_tree->Branch("reco_direction", &reco_dir);
     out_tree->Branch("reco_time", &reco_time, "reco_time/D");
     out_tree->Branch("reco_energy", &reco_energy, "reco_energy/F");
     out_tree->Branch("reco_neff", &reco_neff, "reco_neff/F");
     out_tree->Branch("reco_neff2", &reco_neff2, "reco_neff2/F");
-    // setup hit variables
+
+    // setup reco variables for neutron
+    TVector3 reco_dir_neutron, reco_pos_neutron;
+    double reco_pos_x_neutron, reco_pos_y_neutron, reco_pos_z_neutron;
+    double reco_time_neutron;
+    float reco_energy_neutron, reco_neff_neutron, reco_neff2_neutron;
+    //out_tree->Branch("reco_position", &reco_pos);
+    out_tree->Branch("reco_position_x_neutron", &reco_pos_x_neutron);
+    out_tree->Branch("reco_position_y_neutron", &reco_pos_y_neutron);
+    out_tree->Branch("reco_position_z_neutron", &reco_pos_z_neutron);
+    out_tree->Branch("reco_direction_neutron", &reco_dir_neutron);
+    out_tree->Branch("reco_time_neutron", &reco_time_neutron, "reco_time_neutron/D");
+    out_tree->Branch("reco_energy_neutron", &reco_energy_neutron, "reco_energy_neutron/F");
+    out_tree->Branch("reco_neff_neutron", &reco_neff_neutron, "reco_neff_neutron/F");
+    out_tree->Branch("reco_neff2_neutron", &reco_neff2_neutron, "reco_neff2_neutron/F");
+
+    //setup reco variables for combined BONSAI fit
+    TVector3 reco_dir_combined, reco_pos_combined;
+    double reco_pos_x_combined, reco_pos_y_combined, reco_pos_z_combined;
+    double reco_time_positron_combined, reco_time_neutron_combined;
+    float reco_goodness_positron, reco_goodness_neutron;
+    float reco_nhits100_positron, reco_nhits100_neutron;
+    float reco_energy_combined, reco_neff_combined, reco_neff2_combined;
+    out_tree->Branch("reco_position_x_combined", &reco_pos_x_combined);
+    out_tree->Branch("reco_position_y_combined", &reco_pos_y_combined);
+    out_tree->Branch("reco_position_z_combined", &reco_pos_z_combined);
+    out_tree->Branch("reco_time_positron_combined", &reco_time_positron_combined, "reco_time_positron_combined/D");
+    out_tree->Branch("reco_time_neutron_combined", &reco_time_neutron_combined, "reco_time_neutron_combined/D");
+    out_tree->Branch("reco_goodness_positron", &reco_goodness_positron, "reco_goodness_positron/F");
+    out_tree->Branch("reco_goodness_neutron", &reco_goodness_neutron, "reco_goodness_neutron/F");
+    out_tree->Branch("reco_nhits100_positron", &reco_nhits100_positron, "reco_nhits100_positron/F");
+    out_tree->Branch("reco_nhits100_neutron", &reco_nhits100_neutron, "reco_nhits100_neutron/F");
+    out_tree->Branch("reco_energy_combined", &reco_energy_combined, "reco_energy_combined/F");
+    out_tree->Branch("reco_neff_combined", &reco_neff_combined, "reco_neff_combined/F");
+    out_tree->Branch("reco_neff2_combined", &reco_neff2_combined, "reco_neff2_combined/F");
+
+    // setup hit variables for positron
     int nhits, ndigits;
     out_tree->Branch("nhits", &nhits, "nhits/I");
     out_tree->Branch("ndigits", &ndigits, "ndigits/I");
+
+    //setup hit variables for neutron
+    int nhits_neutron, ndigits_neutron;
+    out_tree->Branch("nhits_neutron", &nhits_neutron, "nhits_neutron/I");
+    out_tree->Branch("ndigits_neutron", &ndigits_neutron, "ndigits_neutron/I");
 
     // Read geometry from WCSim file
     TTree *geotree = (TTree *)file->Get("wcsimGeoT");
@@ -133,17 +178,31 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
 
     int ncherenkovdigihits, i;
     double x, y, z, eRec;
+    // for neutron variables
+    double x_neutron, y_neutron, z_neutron, eRec_neutron;
+    //combined variables
+    double x_combined, y_combined, z_combined, eRec_combined;
 
     // used by bonsai->BonsaiFit()
     float bsVertex[4], bsResult[6], bsGood[3];
     int *bsNhit;
     int bsNsel[2];
 
+    //define neutron bsNhit
+    float bsVertex_neutron[4], bsResult_neutron[6], bsGood_neutron[3];
+    int *bsNhit_neutron;
+    int bsNsel_neutron[2];
+
+    //define BONSAIPairFit
+    float pair_vertex[5], pair_goodness[2], pair_dir[2];
+    int pair_nhits100[2];
+
     // Loop over events
     std::cout << "Starting timer for the event loop" << std::endl;
     TStopwatch timer;
 
-    for (int ev = start_event; ev < nWCSimEvents; ev++) {
+    // for (int ev = start_event; ev < nWCSimEvents; ev++) {
+     for (int ev = start_event; ev < 100; ev++) {
         if (ev % 100 == 0 || ev == 0) {
             std::cout << "Event " << ev + 1 << " of " << nWCSimEvents << std::endl;
         }
@@ -155,6 +214,9 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
         true_charge = -9999;
         true_energy = 0;
         reco_pos.SetXYZ(-9999, -9999, -9999);
+	reco_pos_x= -9999;
+	reco_pos_y= -9999;
+	reco_pos_z = -9999;
         reco_dir.SetXYZ(-99, -99, -99);
         reco_time = -9999;
         reco_energy = -99;
@@ -162,6 +224,33 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
         reco_neff2 = -99;
         nhits = -99;
         ndigits = -99;
+	//tree variables for neutron
+	   
+        ndigits_neutron = -99;
+        reco_pos_neutron.SetXYZ(-9999, -9999, -9999);
+        reco_pos_x_neutron = -9999;
+        reco_pos_y_neutron = -9999;
+        reco_pos_z_neutron = -9999;
+        reco_dir_neutron.SetXYZ(-99, -99, -99);
+        reco_time_neutron = -9999;
+        reco_energy_neutron = -99;
+        reco_neff_neutron = -99;
+        reco_neff2_neutron = -99;
+        nhits_neutron = -99;
+
+	//tree variables for combined BONSAI fit
+	
+	reco_pos_combined.SetXYZ(-9999, -9999, -9999);
+	reco_pos_x_combined = -9999;
+	reco_pos_y_combined = -9999;
+	reco_pos_z_combined = -9999;
+	reco_dir_combined.SetXYZ(-99, -99, -99);
+	reco_time_neutron_combined = -9999;
+	reco_time_positron_combined = -9999;
+	reco_energy_combined = -99;
+	reco_neff_combined = -99;
+	reco_neff2_combined = -99;
+	
 
         if (verbose) {
             // red
@@ -177,6 +266,7 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
 
         // get the hits & digits
         nhits = trigger->GetNcherenkovhits();
+        nhits_neutron = trigger->GetNcherenkovhits();
 
         // See chapter 5 of doc/DetectorDocumentation.pdf in the WCSim repository
         // for more information on the structure of the root file.
@@ -233,7 +323,7 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
 
             // find the primary particle
             if (wcsimroottrack->GetParenttype() == 0 &&
-                (abs(wcsimroottrack->GetIpnu()) == 11 || wcsimroottrack->GetIpnu() == 2112)) {
+                (abs(wcsimroottrack->GetIpnu()) == 11 )) {
                 true_dir.SetXYZ(wcsimroottrack->GetDir(0), wcsimroottrack->GetDir(1), wcsimroottrack->GetDir(2));
                 // red
                 std::cout << "\033[1;31m";
@@ -243,7 +333,7 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
                 printf("  Track initial relativistic energy [MeV]: %f\n", wcsimroottrack->GetE());
                 // white
                 std::cout << "\033[0m";
-                true_energy += wcsimroottrack->GetE();
+                true_energy = wcsimroottrack->GetE();
                 found_true_track = true;
                 /* break; */
             }
@@ -254,7 +344,10 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
                    "default values"
                 << std::endl;
         }
-        
+	    std::cout << "true_energy " << true_energy << std::endl;
+	    
+	    if (true_energy > 50) continue;
+	    
         // Loop over triggers in the event
         for (int index = 0; index < 1; index++) {
 	    if (verbose)
@@ -270,49 +363,199 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
 	    
 	    //TODO temporarily skip higher-energy events
 	    if (ncherenkovdigihits >2000) continue;
+            
+            //vectors for positron
+            std::vector<float> bsT;
+            std::vector<float> bsQ;
+            std::vector<int> bsCAB;
 
-            std::vector<float> bsT(ncherenkovdigihits, 0);
-            std::vector<float> bsQ(ncherenkovdigihits, 0);
-            std::vector<int> bsCAB(ncherenkovdigihits, 0);
+	    //neutron vectors
+	    std::vector<float> neutronT;
+	    std::vector<float> neutronQ;
+	    std::vector<int> neutronCAB;
 
-            bsNhit = &ncherenkovdigihits;
+            //bsNhit = &ncherenkovdigihits;
 
             // fill the tree variable
-            ndigits = ncherenkovdigihits;
+            //ndigits = ncherenkovdigihits;
 
             // Get time, charge and PMT number for each hit
+	    
+	    
             for (i = 0; i < ncherenkovdigihits; i++) {
                 TObject *element = (trigger->GetCherenkovDigiHits())->At(i);
                 WCSimRootCherenkovDigiHit *cherenkovdigihit = dynamic_cast<WCSimRootCherenkovDigiHit *>(element);
 
-                bsT[i] = cherenkovdigihit->GetT();
-                bsQ[i] = cherenkovdigihit->GetQ();
-                bsCAB[i] = cherenkovdigihit->GetTubeId();
-//                std::cout << bsT[i] << ", ";
-                if (bsCAB[i] == 0)
-                    std::cout
-                        << "Digit has tube ID 0. This shouldn't happen. WCSim TubeIds run from 1 to N. Has WCSim "
-                           "changed?"
-                        << std::endl;
-            }
-//	    std::cout << std::endl;
+		//using float and int to get the time, charge, and tube ID of the hit
+
+		float time = cherenkovdigihit->GetT();
+		float charge = cherenkovdigihit->GetQ();
+		int tubeId = cherenkovdigihit->GetTubeId();
+
+		if (i < 20) {
+		  std::cout << "Hit" << i << "Time:" << time << "ns" << std::endl;
+		}
+		
+
+		//skips hits that are 5000ns or more (filtering for positron hits)
+		//so if hit time is >/= to 5000ns, the condition will skip to filter out late hits
+		if (time < 2000) {
+
+		  //update the bsT, bsQ, and bsCAB vectors with the filtered hits
+                 //using .push_back command to add elements to the vector
+
+                 bsT.push_back(time);
+                 bsQ.push_back(charge);
+                 bsCAB.push_back(tubeId);
+		}
+
+		// filtering neutron hits in the same way as positrons
+		if (time >= 2000) {
+		  neutronT.push_back(time);
+		  neutronQ.push_back(charge);
+		  neutronCAB.push_back(tubeId);
+		}
+
+		if (tubeId == 0) {
+		  std::cout
+		    <<"Digit has tube ID 0. This shouldn't happen. WCSim tube runs from 1 to N. Has WCSim changed?"
+		    <<std::endl;
+		}
+	    }
+
+	    //count the number of filtered hits (so less than 5000 ns)
+
+	    int ncherenkovdigihits_filtered = bsT.size();
+	    bsNhit = &ncherenkovdigihits_filtered;
+	    ndigits = ncherenkovdigihits_filtered;
+
+	    //count neutron filtered hits
+	    int ncherenkovdigihits_neutron = neutronT.size();
+	    bsNhit_neutron = &ncherenkovdigihits_neutron;
+	    ndigits_neutron = ncherenkovdigihits_neutron;
+	    
 
             // fit vertex position and direction using BONSAI
-            int *bsCAB_a = &bsCAB[0]; // turn std::vector into a pointer for BONSAI
-            float *bsT_a = &bsT[0];
-            float *bsQ_a = &bsQ[0];
+	   int *bsCAB_a = &bsCAB[0]; // turn std::vector into a pointer for BONSAI
+           float *bsT_a = &bsT[0];
+           float *bsQ_a = &bsQ[0];
 
+	   //sliding window for neutron
+	   //finding 200 ns window with most hits
+	   if (neutronT.empty()) {
+	     std::cout << "No neutron hits."
+		       <<std::endl;
+	     continue;
+	   }
+	   
+	   int max_nhits = 0;
+	   size_t max_start = 0;
+	   size_t max_end = 0;
+
+	   for (size_t start = 0; start<neutronT.size()-2; start++) {
+	     for (size_t end = start + 1 ; end<neutronT.size()-1; end++) {
+	       
+	       float dt = neutronT[end]-neutronT[start];
+	       if (dt >= 200) {
+		 
+		 int tmp_nhits = end - start;
+
+		 if (tmp_nhits > max_nhits) {
+
+		     max_nhits = tmp_nhits;
+		     max_start = start;
+		     max_end = end;
+		   }
+		 break;
+	       }
+	     }
+	   }
+	   
+
+	     //define vectors to extract updated hits 
+	     std::vector<float>neutronT_window;
+	     std::vector<float>neutronQ_window;
+	     std::vector<int>neutronCAB_window;
+
+	     for (size_t i = max_start; i < max_end; ++i) {
+	       
+		 //push back command to add elements to vectors
+		 neutronT_window.push_back(neutronT[i]);
+		 neutronQ_window.push_back(neutronQ[i]);
+		 neutronCAB_window.push_back(neutronCAB[i]);
+	     }
+
+	     //update neutron vectors 
+	     neutronT = neutronT_window;
+	     neutronQ = neutronQ_window;
+	     neutronCAB = neutronCAB_window;
+
+	     //update hits and vectors to BONSAI function
+	     ncherenkovdigihits_neutron = neutronT.size();
+	     bsNhit_neutron = &ncherenkovdigihits_neutron;
+	     ndigits_neutron = ncherenkovdigihits_neutron;
+	       
+	     float *neutronT_a = &neutronT_window[0];
+	     float *neutronQ_a = &neutronQ_window[0];
+	     int *neutronCAB_a = &neutronCAB_window[0];
+
+	     //add message to say no neutron hits
+	     if (ncherenkovdigihits_neutron == 0) {
+	       std::cout << "No neutron hits in 200 ns window"
+			 <<std::endl;
+	     }
+	     
+		 
+		 
+
+	    //vertex for neutron vectors
+	    //int *neutronCAB_a = &neutronCAB[0];
+	    //float *neutronT_a = &neutronT[0];
+	    //float *neutronQ_a = &neutronQ[0];
+
+
+	    
+        //bonsai fit for positron
             if (verbose)
                 std::cout << "Fitting event vertex with hk-BONSAI ..." << std::endl;
 
             try {
-                bonsai->BonsaiFit(bsVertex, bsResult, bsGood, bsNsel, bsNhit, bsCAB_a, bsT_a, bsQ_a);
+	      bonsai->BonsaiFit(bsVertex, bsResult, bsGood, bsNsel, bsNhit, bsCAB_a, bsT_a, bsQ_a);
             } catch (int e) {
                 std::cerr << "BONSAI threw an exception! Will fill the tree, then continue (not running FLOWER)"
                           << std::endl;
                 out_tree->Fill();
                 continue;
             }
+
+            //bonsai fit for neutron
+            if (verbose)
+                std::cout << "Fitting event vertex with hk-BONSAI ..." << std::endl;
+
+            try {
+                bonsai->BonsaiFit(bsVertex_neutron, bsResult_neutron, bsGood_neutron, bsNsel_neutron, bsNhit_neutron, neutronCAB_a, neutronT_a, neutronQ_a);
+            }
+            catch (int e) {
+                std::cerr << "BONSAI threw an exception! Will fill the tree, then continue (not running FLOWER)"
+                    << std::endl;
+                out_tree->Fill();
+                continue;
+            }
+
+	    //BONSAI combined fit
+	    if (verbose)
+                std::cout << "Fitting event vertex with hk-BONSAI ..." << std::endl;
+
+            try {
+	      bonsai->BonsaiPairFit(pair_vertex, pair_goodness, pair_dir, pair_nhits100, bsNhit, bsCAB_a, bsT_a, bsQ_a, bsNhit_neutron, neutronCAB_a, neutronT_a, neutronQ_a);
+            }
+            catch (int e) {
+                std::cerr << "BONSAI PairFit threw an exception! Will fill the tree, then continue (not running FLOWER)"
+                    << std::endl;
+                out_tree->Fill();
+                continue;
+            }
+
             if (verbose) {
                 /* std::cout << "Vertex found at:"; */
                 for (int iv = 0; iv < 4; iv++) {
@@ -333,6 +576,30 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
             y = sin(bsResult[0]) * sin(bsResult[1]);
             z = cos(bsResult[0]);
 
+            // filling reco energy for neutron
+	
+            eRec_neutron = flower->GetEnergy(neutronT, neutronCAB, &bsVertex_neutron[0]);
+	    reco_energy_neutron = eRec_neutron;
+	    reco_neff_neutron = flower->RetrieveNEff();
+	    reco_neff2_neutron = flower->RetrieveNEff2();
+
+            // reconstructed lepton direction (bsResult[0] is theta, bsResult[1] is phi) (for neutron)
+            x_neutron = sin(bsResult_neutron[0]) * cos(bsResult_neutron[1]);
+            y_neutron = sin(bsResult_neutron[0]) * sin(bsResult_neutron[1]);
+            z_neutron = cos(bsResult_neutron[0]);
+
+	    //filling reco energy for combined fit
+	    eRec_combined = flower->GetEnergy(bsT, bsCAB, &pair_vertex[0]);
+	    reco_energy_combined = eRec_combined;
+	    reco_neff_combined = flower->RetrieveNEff();
+	    reco_neff2_combined = flower->RetrieveNEff2();
+
+	    //reconstruction lepton direction for combined fit
+	    x_combined = sin(pair_dir[0]) * cos(pair_dir[1]);
+	    y_combined = sin(pair_dir[0]) * sin(pair_dir[1]);
+	    z_combined = cos(pair_dir[0]);
+
+
             // Print out reconstruction results in the format `time, PID, energy, direction (xyz), vertex (xyz)`
             // PID (i.e. electron vs. positron) and absolute time (as opposed to time relative to the trigger
             // window) are not available.
@@ -342,11 +609,38 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
 
             // fill the reconstructed tree variables
             reco_pos.SetXYZ(bsVertex[0], bsVertex[1], bsVertex[2]);
+	    reco_pos_x = bsVertex[0];
+	    reco_pos_y = bsVertex[1];
+	    reco_pos_z = bsVertex[2];
             reco_dir.SetXYZ(x, y, z);
             reco_time = bsVertex[3];
             reco_energy = eRec;
             reco_neff = flower->RetrieveNEff();
             reco_neff2 = flower->RetrieveNEff2();
+
+            //fill reconstructed tree variables for neutron
+            reco_pos_neutron.SetXYZ(bsVertex_neutron[0], bsVertex_neutron[1], bsVertex_neutron[2]);
+            reco_pos_x_neutron = bsVertex_neutron[0];
+            reco_pos_y_neutron = bsVertex_neutron[1];
+            reco_pos_z_neutron = bsVertex_neutron[2];
+            reco_dir_neutron.SetXYZ(x_neutron, y_neutron, z_neutron);
+            reco_time_neutron = bsVertex_neutron[3];
+            //reco_energy_neutron = eRec_neutron;
+            //reco_neff_neutron = flower->RetrieveNEff();
+            //reco_neff2_neutron = flower->RetrieveNEff2();
+
+	    //fill reconstructed tree variables for BONSAI combined fit
+	    reco_pos_combined.SetXYZ(pair_vertex[0], pair_vertex[1], pair_vertex[2]);
+	    reco_pos_x_combined = pair_vertex[0];
+	    reco_pos_y_combined = pair_vertex[1];
+	    reco_pos_z_combined = pair_vertex[2];
+	    reco_time_positron_combined = pair_vertex[3];
+	    reco_time_neutron_combined = pair_vertex[4];
+	    reco_goodness_positron = pair_goodness[0];
+	    reco_goodness_neutron = pair_goodness[1];
+	    reco_nhits100_positron = pair_nhits100[0];
+	    reco_nhits100_neutron = pair_nhits100[1];
+	    reco_dir_combined.SetXYZ(x_combined, y_combined, z_combined);
 
             true_charge = std::accumulate(bsQ.begin(), bsQ.end(), 0.0);
 
@@ -354,6 +648,11 @@ int flower_with_bonsai(const char *detector, const char *filename = "../wcsim.ro
             std::vector<int>().swap(bsCAB);
             std::vector<float>().swap(bsT);
             std::vector<float>().swap(bsQ);
+
+            // Free memory used by neutron vectors
+            std::vector<int>().swap(neutronCAB);
+            std::vector<float>().swap(neutronT);
+            std::vector<float>().swap(neutronQ);
 
 	    std::cout << "Filling event " << ev << ", trigger " << index << std::endl;
             out_tree->Fill();
